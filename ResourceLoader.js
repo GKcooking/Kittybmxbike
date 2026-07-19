@@ -1,2 +1,149 @@
-var gdjs;(function(c){const d=new c.Logger("ResourceLoader"),i=new c.Logger("ResourceLoader - debug").enable(!1),R=(g,e,s)=>{if(g.startsWith("data:")||g.startsWith("blob:"))return g;const r=g.indexOf("?")===-1?"?":"&";return g+r+e+"="+s},p=g=>g.startsWith("https://project-resources.gdevelop.io/")||g.startsWith("https://project-resources-dev.gdevelop.io/");class m{constructor(e){this.isFinished=!1;this.identifier=e,this.onProgressCallbacks=new Array,this.onFinishCallbacks=new Array}registerCallback(e,s){if(this.isFinished){e();return}this.onFinishCallbacks.push(e),s&&this.onProgressCallbacks.push(s)}onProgress(e,s){for(const r of this.onProgressCallbacks)r(e,s)}onFinish(){this.isFinished=!0;for(const e of this.onFinishCallbacks)e()}}c.LoadingTask=m;class _{async loadResource(e){}async processResource(e){}getResourceKinds(){return["internal-in-game-editor-only-svg"]}unloadResource(e){}dispose(){}}const u=class{constructor(e,s,r,o){this._spineAtlasManager=null;this._spineManager=null;this.privateResourceManager=new y(this);this.sceneResourceLoadingQueue=new M("scene",this.privateResourceManager,!1,(e,s,r,o)=>this._getResourcesOnlyUsedInUnloadedScene(e,s,r,o));this.objectResourceLoadingQueues=new Map;this._runtimeGame=e,this._globalResources=r,this.setResources(s,r,o),this._imageManager=new c.ImageManager(this),this._soundManager=new c.SoundManager(this),this._fontManager=new c.FontManager(this),this._jsonManager=new c.JsonManager(this),this._bitmapFontManager=new c.BitmapFontManager(this,this._imageManager),this._model3DManager=new c.Model3DManager(this),this._svgManager=new _;const t=[this._imageManager,this._soundManager,this._fontManager,this._jsonManager,this._bitmapFontManager,this._model3DManager,this._svgManager];this._resourceManagersMap=new Map;for(const a of t)for(const n of a.getResourceKinds())this._resourceManagersMap.set(n,a);this._registerOptionalManagersIfNeeded()}getRuntimeGame(){return this._runtimeGame}setResources(e,s,r){this._globalResources=s,this.sceneResourceLoadingQueue.clear();for(const o of this.objectResourceLoadingQueues.values())o.clear();for(const o of r)this.sceneResourceLoadingQueue.registerResources(o.name,o.usedResources);for(let o=r.length-1;o>=0;o--){const t=r[o],a=t.resourcesPreloading||"inherit";(a==="inherit"?this._runtimeGame.getSceneResourcesPreloading():a)==="at-startup"&&this.sceneResourceLoadingQueue.enqueue(t.name)}this.privateResourceManager._resources.clear();for(const o of e)!o.file||this.privateResourceManager._resources.set(o.name,o)}async loadAllResources(e){let s=0;await u.processAndRetryIfNeededWithPromisePool([...this.privateResourceManager._resources.values()],u.maxForegroundConcurrency,u.maxAttempt,async r=>{await this.privateResourceManager._loadResource(r),await this.privateResourceManager._processResource(r),s++,e(s,this.privateResourceManager._resources.size)}),this.sceneResourceLoadingQueue.setAllResourcesAs("ready");for(const r of this.objectResourceLoadingQueues.values())r.setAllResourcesAs("ready")}async loadResources(e,s){let r=0;await u.processAndRetryIfNeededWithPromisePool(e,u.maxForegroundConcurrency,u.maxAttempt,async o=>{const t=this.privateResourceManager._resources.get(o);t&&(await this.privateResourceManager._loadResource(t),await this.privateResourceManager._processResource(t)),r++,s(r,this.privateResourceManager._resources.size)})}async loadGlobalAndFirstSceneResources(e,s){const r=this.sceneResourceLoadingQueue.getResourceNamesFor(e);if(!r){d.warn(`Can't load resource for unknown scene: "`+e+'".');return}let o=0;const t=[...this._globalResources,...r];await u.processAndRetryIfNeededWithPromisePool(t,u.maxForegroundConcurrency,u.maxAttempt,async a=>{const n=this.privateResourceManager._resources.get(a);if(!n){d.warn('Unable to find resource "'+a+'".');return}await this.privateResourceManager._loadResource(n),await this.privateResourceManager._processResource(n),o++,s(o,t.length)}),this.sceneResourceLoadingQueue.setResourcesAs(e,"ready")}async loadAllSceneInBackground(){this.sceneResourceLoadingQueue.loadAllTasksInBackground()}async loadAndProcessSceneResources(e,s){this.areSceneAssetsReady(e)||(await this.loadSceneResources(e,s),await this.sceneResourceLoadingQueue.processResources(e,s))}async loadSceneResources(e,s){i.log(`Prioritization of loading of resources for scene ${e} was requested.`),this.sceneResourceLoadingQueue.isLoadingInForeground=!0;const r=this.sceneResourceLoadingQueue.prioritize(e);return new Promise((o,t)=>{if(!r){this.sceneResourceLoadingQueue.isLoadingInForeground=!1,i.log(`Loading of resources for scene ${e} was immediately resolved.`),o();return}r.registerCallback(()=>{i.log(`Loading of resources for scene ${e} just finished.`),this.sceneResourceLoadingQueue.isLoadingInForeground=!1,o()},s)})}async loadObjectResources(e,s,r){i.log(`Loading of resources for object ${s} was requested.`);const o=this.getObjectResourceLoadingQueue(e);o.registerResources(s,r);const t=o.enqueue(s);return o.loadAllTasksInBackground(),new Promise((a,n)=>{if(!t){i.log(`Loading of resources for object ${s} was immediately resolved.`),a();return}t.registerCallback(()=>{i.log(`Loading of resources for object ${s} just finished.`),a()})})}getObjectResourceLoadingQueue(e){let s=this.objectResourceLoadingQueues.get(e);return s||(s=new M(`Independent objects of ${e}`,this.privateResourceManager,!0,(r,o,t,a)=>this._getResourcesOnlyUsedInObject(e,r,o)),this.objectResourceLoadingQueues.set(e,s)),s}dispose(){for(const e of this._resourceManagersMap.values())e.dispose()}unloadSceneResources({unloadedSceneName:e,newSceneName:s}){if(!e)return;i.log(`Unloading of resources for scene ${e} was requested.`),this.sceneResourceLoadingQueue.unloadResources(e,s),this.getObjectResourceLoadingQueue(e).clear(),i.log(`Unloading of resources for scene ${e} finished.`)}unloadObjectResources(e,s){const r=this.getObjectResourceLoadingQueue(e);if(!r.areAssetsReady(s)){i.log(`Can't unload of resources for object ${s} as it is not loaded.`);return}for(const o of this._runtimeGame._sceneStack.getAllScenes())if(o.getObjects(s).length>0){i.log(`Can't unload of resources for object ${s} as it still have instances living in the scene.`);return}i.log(`Unloading of resources for object ${s} was requested.`),r.unloadResources(s),r.unregisterResources(s),i.log(`Unloading of resources for object ${s} finished.`)}unloadAllResources(){i.log("Unloading of all resources was requested.");for(const e of this.privateResourceManager._resources.values())this.privateResourceManager._unloadResource(e.name);this.sceneResourceLoadingQueue.setAllResourcesAs("not-loaded");for(const e of this.objectResourceLoadingQueues.values())e.clear();i.log("Unloading of all resources finished.")}getSceneLoadingProgress(e){return this.sceneResourceLoadingQueue.getLoadingProgress(e)}areSceneAssetsLoaded(e){return this.sceneResourceLoadingQueue.areAssetsLoaded(e)}areSceneAssetsReady(e){return this.sceneResourceLoadingQueue.areAssetsReady(e)}areObjectAssetsReady(e,s){return this.getObjectResourceLoadingQueue(e).areAssetsReady(s)}getResource(e){return this.privateResourceManager._resources.get(e)||null}getFullUrl(e){this._runtimeGame.isInGameEdition()&&(e.startsWith("file://")||!e.startsWith("http"))&&(e=R(e,"cache",""+Date.now()));const{gdevelopResourceToken:s}=this._runtimeGame._options;return!s||!p(e)?e:R(e,"gd_resource_token",encodeURIComponent(s))}checkIfCredentialsRequired(e){return this._runtimeGame._options.gdevelopResourceToken?!1:!!p(e)}getSoundManager(){return this._soundManager}getImageManager(){return this._imageManager}getFontManager(){return this._fontManager}getBitmapFontManager(){return this._bitmapFontManager}getJsonManager(){return this._jsonManager}getModel3DManager(){return this._model3DManager}getSpineManager(){return this._spineManager}getSpineAtlasManager(){return this._spineAtlasManager}registerOptionalManagersForHotReload(){this._registerOptionalManagersIfNeeded()}_registerOptionalManagersIfNeeded(){if(!this._spineAtlasManager&&c.SpineAtlasManager){this._spineAtlasManager=new c.SpineAtlasManager(this,this._imageManager);for(const e of this._spineAtlasManager.getResourceKinds())this._resourceManagersMap.set(e,this._spineAtlasManager)}if(!this._spineManager&&c.SpineManager&&this._spineAtlasManager){this._spineManager=new c.SpineManager(this,this._spineAtlasManager);for(const e of this._spineManager.getResourceKinds())this._resourceManagersMap.set(e,this._spineManager)}}injectMockResourceManagerForTesting(e,s){this._resourceManagersMap.set(e,s)}_getResourcesOnlyUsedInUnloadedScene(e,s,r,o){const t=new Set(s.resourceNames),a=e?this.getObjectResourceLoadingQueue(e):null;if(a)for(const n of a.loadingStates.values())for(const l of n.resourceNames)t.add(l);for(const n of this.sceneResourceLoadingQueue.loadingStates.values())if(n!==s&&(n===o||n.status==="loaded"||n.status==="ready"))for(const l of n.resourceNames)t.delete(l);for(const n of this.objectResourceLoadingQueues.values())if(n!==a)for(const l of n.loadingStates.values())for(const v of l.resourceNames)t.delete(v);return t}_getResourcesOnlyUsedInObject(e,s,r){const o=new Set(r.resourceNames),t=this.getObjectResourceLoadingQueue(e);for(const a of t.loadingStates.values())if(a!==r)for(const n of a.resourceNames)o.delete(n);for(const a of this.sceneResourceLoadingQueue.loadingStates.values())if(a.status==="loaded"||a.status==="ready")for(const n of a.resourceNames)o.delete(n);for(const a of this.objectResourceLoadingQueues.values())if(a!==t)for(const n of a.loadingStates.values())for(const l of n.resourceNames)o.delete(l);return o}static processWithPromisePool(e,s,r){const o=[],t=[];let a=0,n=0;return new Promise((l,v)=>{const L=()=>{if(e.length===0){l({results:o,errors:t});return}for(;a<s&&n<e.length;){const b=e[n++];a++,r(b).then(f=>o.push(f)).catch(f=>t.push({item:b,error:f})).finally(()=>{a--,n===e.length&&a===0?l({results:o,errors:t}):L()})}};L()})}static async processAndRetryIfNeededWithPromisePool(e,s,r,o){const t=await u.processWithPromisePool(e,s,o);t.errors.length!==0&&d.warn("Some assets couldn't be downloaded. Trying again now.");for(let a=1;a<r&&t.errors.length!==0;a++){const n=await u.processWithPromisePool(e,s,o);t.results.push.apply(t.results,n.results),t.errors=n.errors}return t}};let h=u;h.maxForegroundConcurrency=20,h.maxBackgroundConcurrency=5,h.maxAttempt=3,c.ResourceLoader=h;class y{constructor(e){this._resources=new Map;this.resourceLoader=e}async _processResource(e){const s=this.resourceLoader._resourceManagersMap.get(e.kind);if(!s){d.warn('Unknown resource kind: "'+e.kind+'" for: "'+e.name+'".');return}await s.processResource(e.name)}async _loadResource(e){const s=this.resourceLoader._resourceManagersMap.get(e.kind);if(!s){d.warn('Unknown resource kind: "'+e.kind+'" for: "'+e.name+'".');return}await s.loadResource(e.name)}_unloadResource(e){const s=this._resources.get(e);if(s){const r=this.resourceLoader._resourceManagersMap.get(s.kind);r&&(i.log(`Unloading of resources of kind ${s.kind} : ${e}`),r.unloadResource(s))}}}c.PrivateResourceManager=y;class M{constructor(e,s,r,o){this.currentLoadingTaskIdentifier="";this.currentTaskProgress=0;this.loadingStates=new Map;this.loadingTaskQueue=new Array;this.isLoadingInForeground=!0;this.name=e,this.resourceLoader=s,this.shouldProcessResources=r,this.getResourcesDifference=o}async loadAllTasksInBackground(){if(!this.currentLoadingTaskIdentifier){for(i.log(`Loading all ${this.name} resources, in background.`);this.loadingTaskQueue.length>0;){i.log(`Still resources of ${this.loadingTaskQueue.length} ${this.name}(s) to load: ${this.loadingTaskQueue.map(s=>s.identifier).join(", ")}`);const e=this.loadingTaskQueue[this.loadingTaskQueue.length-1];if(e!==void 0)if(this.currentLoadingTaskIdentifier=e.identifier,this.areAssetsLoaded(e.identifier))this.loadingTaskQueue.pop();else{i.log(`Loading (but not processing) resources for ${this.name} ${e.identifier}.`);const s=this.loadingStates.get(e.identifier);if(s)await this._doLoadResources(s,async(r,o)=>e.onProgress(r,o));else{d.warn(`Can't load resource for unknown ${this.name}: "${e.identifier}".`);return}i.log(`Done loading (but not processing) resources for ${this.name} ${e.identifier}.`),this.loadingTaskQueue.splice(this.loadingTaskQueue.findIndex(r=>r===e),1),e.onFinish()}}i.log(`${this.name} resources loading finished.`),this.currentLoadingTaskIdentifier=""}}async _doLoadResources(e,s){let r=0;await h.processAndRetryIfNeededWithPromisePool(e.resourceNames,this.isLoadingInForeground?h.maxForegroundConcurrency:h.maxBackgroundConcurrency,h.maxAttempt,async o=>{const t=this.resourceLoader._resources.get(o);if(!t){d.warn('Unable to find resource "'+o+'".');return}await this.resourceLoader._loadResource(t),this.shouldProcessResources&&await this.resourceLoader._processResource(t),r++,this.currentTaskProgress=r/e.resourceNames.length,s&&await s(r,e.resourceNames.length)}),e.status=this.shouldProcessResources?"ready":"loaded"}async processResources(e,s){const r=this.loadingStates.get(e);if(!r){d.warn(`Can't load resource for unknown ${this.name}: "${e}".`);return}if(r.status!=="loaded"){d.warn(`Resources are not loaded can't process them: "${e}".`);return}let o=0;for(const t of r.resourceNames){const a=this.resourceLoader._resources.get(t);if(!a){d.warn('Unable to find resource "'+t+'".');continue}await this.resourceLoader._processResource(a),o++,s&&await s(o,r.resourceNames.length)}r.status="ready"}prioritize(e){const s=this.loadingStates.get(e);if(!s)return null;if(s.status==="loaded"||s.status==="ready")return i.log(`Scene ${e} is already loaded. Skipping prioritization.`),null;const r=this.loadingTaskQueue.findIndex(t=>t.identifier===e);let o;return r!==-1?(o=this.loadingTaskQueue[r],this.loadingTaskQueue.splice(r,1),this.loadingTaskQueue.push(o)):(o=new m(e),this.loadingTaskQueue.push(o)),this.loadAllTasksInBackground(),o}registerResources(e,s){if(this.loadingStates.get(e)){i.log(`${this.name} ${e} is already registered.`);return}this.loadingStates.set(e,{resourceNames:s.map(o=>o.name),status:"not-loaded"})}unregisterResources(e){this.loadingStates.delete(e)}enqueue(e){const s=this.loadingStates.get(e);if(!s)return i.log(`Resources for ${this.name} ${e} are not registered.`),null;if(s.status!=="not-loaded")return i.log(`Resources for ${this.name} ${e} are already loading or loaded.`),null;i.log(`Loading of resources for ${this.name} ${e} was requested.`);const r=new m(e);return this.loadingTaskQueue.push(r),r}unloadResources(e,s=null){if(e===s||!e)return;i.log(`Unloading of resources for ${this.name} ${e} was requested.`);const r=this.loadingStates.get(e),o=s&&this.loadingStates.get(s)||null;if(!!r){for(const t of this.getResourcesDifference(e,r,s,o))this.resourceLoader._unloadResource(t);i.log(`Unloading of resources for ${this.name} ${e} finished.`),r.status="not-loaded"}}areAssetsLoaded(e){const s=this.loadingStates.get(e);return s?s.status==="loaded"||s.status==="ready":!1}areAssetsReady(e){const s=this.loadingStates.get(e);return s?s.status==="ready":!1}setAllResourcesAs(e){for(const s of this.loadingStates.values())s.status=e}setResourcesAs(e,s){const r=this.loadingStates.get(e);!r||(r.status=s)}getResourceNamesFor(e){const s=this.loadingStates.get(e);return s?s.resourceNames:null}getLoadingProgress(e){return e===this.currentLoadingTaskIdentifier?this.currentTaskProgress:this.areAssetsLoaded(e)?1:0}clear(){this.loadingStates.clear(),this.loadingTaskQueue.length=0}}c.ResourceLoadingQueue=M})(gdjs||(gdjs={}));
-//# sourceMappingURL=ResourceLoader.js.map
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <link rel="manifest" href="manifest.webmanifest">
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <meta name="theme-color" content="#000000" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+	<style>
+		body {
+			margin: 0;
+			padding: 0;
+			background-color: #000000;
+            overflow: hidden;
+		}
+        #canvasArea {
+            margin-left: auto;
+            margin-right: auto;
+            overflow: hidden;
+        }
+
+        
+	</style>
+    <!-- Libs and GDJS core files : -->
+		<script src="libs/jshashtable.js" crossorigin="anonymous"></script>
+	<script src="logger.js" crossorigin="anonymous"></script>
+	<script src="gd.js" crossorigin="anonymous"></script>
+	<script src="libs/rbush.js" crossorigin="anonymous"></script>
+	<script src="AsyncTasksManager.js" crossorigin="anonymous"></script>
+	<script src="inputmanager.js" crossorigin="anonymous"></script>
+	<script src="jsonmanager.js" crossorigin="anonymous"></script>
+	<script src="Model3DManager.js" crossorigin="anonymous"></script>
+	<script src="ResourceLoader.js" crossorigin="anonymous"></script>
+	<script src="ResourceCache.js" crossorigin="anonymous"></script>
+	<script src="timemanager.js" crossorigin="anonymous"></script>
+	<script src="polygon.js" crossorigin="anonymous"></script>
+	<script src="runtimeobject.js" crossorigin="anonymous"></script>
+	<script src="profiler.js" crossorigin="anonymous"></script>
+	<script src="RuntimeInstanceContainer.js" crossorigin="anonymous"></script>
+	<script src="runtimescene.js" crossorigin="anonymous"></script>
+	<script src="scenestack.js" crossorigin="anonymous"></script>
+	<script src="force.js" crossorigin="anonymous"></script>
+	<script src="RuntimeLayer.js" crossorigin="anonymous"></script>
+	<script src="layer.js" crossorigin="anonymous"></script>
+	<script src="RuntimeCustomObjectLayer.js" crossorigin="anonymous"></script>
+	<script src="timer.js" crossorigin="anonymous"></script>
+	<script src="runtimewatermark.js" crossorigin="anonymous"></script>
+	<script src="runtimegame.js" crossorigin="anonymous"></script>
+	<script src="variable.js" crossorigin="anonymous"></script>
+	<script src="variablescontainer.js" crossorigin="anonymous"></script>
+	<script src="oncetriggers.js" crossorigin="anonymous"></script>
+	<script src="runtimebehavior.js" crossorigin="anonymous"></script>
+	<script src="SpriteAnimator.js" crossorigin="anonymous"></script>
+	<script src="spriteruntimeobject.js" crossorigin="anonymous"></script>
+	<script src="affinetransformation.js" crossorigin="anonymous"></script>
+	<script src="CustomRuntimeObjectInstanceContainer.js" crossorigin="anonymous"></script>
+	<script src="CustomRuntimeObject.js" crossorigin="anonymous"></script>
+	<script src="CustomRuntimeObject2D.js" crossorigin="anonymous"></script>
+	<script src="indexeddb.js" crossorigin="anonymous"></script>
+	<script src="events-tools/commontools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/variabletools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/runtimescenetools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/inputtools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/objecttools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/cameratools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/soundtools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/storagetools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/stringtools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/windowtools.js" crossorigin="anonymous"></script>
+	<script src="events-tools/networktools.js" crossorigin="anonymous"></script>
+	<script src="splash/gd-logo-light.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/pixi.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/pixi-filters-tools.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/runtimegame-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/runtimescene-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/layer-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/pixi-image-manager.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/pixi-bitmapfont-manager.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/spriteruntimeobject-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/CustomRuntimeObject2DPixiRenderer.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/DebuggerPixiRenderer.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/loadingscreen-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="pixi-renderers/pixi-effects-manager.js" crossorigin="anonymous"></script>
+	<script src="howler-sound-manager/howler.min.js" crossorigin="anonymous"></script>
+	<script src="howler-sound-manager/howler-sound-manager.js" crossorigin="anonymous"></script>
+	<script src="fontfaceobserver-font-manager/fontfaceobserver.js" crossorigin="anonymous"></script>
+	<script src="fontfaceobserver-font-manager/fontfaceobserver-font-manager.js" crossorigin="anonymous"></script>
+	<script src="Extensions/AnchorBehavior/anchorruntimebehavior.js" crossorigin="anonymous"></script>
+	<script src="Extensions/BitmapText/bitmaptextruntimeobject-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="Extensions/BitmapText/bitmaptextruntimeobject.js" crossorigin="anonymous"></script>
+	<script src="Extensions/DeviceVibration/devicevibrationtools.js" crossorigin="anonymous"></script>
+	<script src="Extensions/PanelSpriteObject/panelspriteruntimeobject-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="Extensions/PanelSpriteObject/panelspriteruntimeobject.js" crossorigin="anonymous"></script>
+	<script src="Extensions/Physics2Behavior/Box2D_v2.3.1_min.wasm.js" crossorigin="anonymous"></script>
+	<script src="Extensions/Physics2Behavior/physics2runtimebehavior.js" crossorigin="anonymous"></script>
+	<script src="Extensions/Physics2Behavior/physics2tools.js" crossorigin="anonymous"></script>
+	<script src="Extensions/PrimitiveDrawing/pixi-graphics-extras/graphics-extras.min.js" crossorigin="anonymous"></script>
+	<script src="Extensions/PrimitiveDrawing/shapepainterruntimeobject-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="Extensions/PrimitiveDrawing/shapepainterruntimeobject.js" crossorigin="anonymous"></script>
+	<script src="Extensions/SystemInfo/systeminfotools.js" crossorigin="anonymous"></script>
+	<script src="Extensions/TextObject/textruntimeobject-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="Extensions/TextObject/textruntimeobject.js" crossorigin="anonymous"></script>
+	<script src="Extensions/TiledSpriteObject/tiledspriteruntimeobject-pixi-renderer.js" crossorigin="anonymous"></script>
+	<script src="Extensions/TiledSpriteObject/tiledspriteruntimeobject.js" crossorigin="anonymous"></script>
+	<script src="Extensions/TweenBehavior/TweenManager.js" crossorigin="anonymous"></script>
+	<script src="Extensions/TweenBehavior/tweenruntimebehavior.js" crossorigin="anonymous"></script>
+	<script src="gdjs-evtsext__panelspritebutton__buttonfsm.js" crossorigin="anonymous"></script>
+	<script src="gdjs-evtsext__panelspritebutton__isingameedition-func.js" crossorigin="anonymous"></script>
+	<script src="gdjs-evtsext__panelspritebutton__panelspritebutton.js" crossorigin="anonymous"></script>
+	<script src="object-capabilities/AnimatableBehavior.js" crossorigin="anonymous"></script>
+	<script src="object-capabilities/EffectBehavior.js" crossorigin="anonymous"></script>
+	<script src="object-capabilities/FlippableBehavior.js" crossorigin="anonymous"></script>
+	<script src="object-capabilities/OpacityBehavior.js" crossorigin="anonymous"></script>
+	<script src="object-capabilities/ResizableBehavior.js" crossorigin="anonymous"></script>
+	<script src="object-capabilities/ScalableBehavior.js" crossorigin="anonymous"></script>
+	<script src="object-capabilities/TextContainerBehavior.js" crossorigin="anonymous"></script>
+	<script src="code0.js" crossorigin="anonymous"></script>
+	<script src="data.js" crossorigin="anonymous"></script>
+
+
+</head>
+<body>
+
+    
+	<script>
+
+    (function() {
+        //Initialization
+        var game = new gdjs.RuntimeGame(gdjs.projectData, {});
+
+        //Create a renderer
+        game.getRenderer().createStandardCanvas(document.body);
+
+        //Bind keyboards/mouse/touch events
+        game.getRenderer().bindStandardEvents(game.getInputManager(), window, document);
+
+        //Load all assets and start the game
+        game.loadAllAssets(function() {
+            game.startGameLoop();
+        });
+    })();
+
+	</script>
+</body>
+</html>
